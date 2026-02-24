@@ -11,6 +11,7 @@
 #include "esp_netif.h"
 #include "esp_tls.h"
 #include "mbedtls/md.h"
+#include "esp_sntp.h"
 
 
 #define WIFI_SSID        "TP-LINK_FC12"
@@ -89,6 +90,21 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
+void obtain_time(void)
+{
+
+esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+
+    time_t now = 0;
+    while (now < 1600000000) {        // czekaj aż czas się zsynchronizuje
+        vTaskDelay(pdMS_TO_TICKS(500));
+        time(&now);
+    }
+}
+
+
 const char tuya_cacert_pem[] = {\
 "-----BEGIN CERTIFICATE-----\n"\
 "MIIDxTCCAq2gAwIBAgIBADANBgkqhkiG9w0BAQsFADCBgzELMAkGA1UEBhMCVVMx\n"\
@@ -146,21 +162,11 @@ void tuya_calc_password(const char *device_secret,
     }
 }
 
-
-//obtain time funkcja
-
 static void mqtt_start(void)
 {
-    // time_t now = 0;
-    // time(&now);
-    // // snprintf(tuya_timestamp, sizeof(tuya_timestamp),
-    // "%ld", (long) (int32_t)now);  // jeśli wiesz, że mieści się w 32 bitach
-
     time_t now = time(NULL);
+    snprintf(tuya_timestamp, sizeof(tuya_timestamp), "%ld", (long) (int32_t)now);  // jeśli wiesz, że mieści się w 32 bitach
 
-    // jeśli wystarczy Ci 32-bitowy timestamp (do roku 2038):
-    uint32_t now32 = (uint32_t) now;
-    //ESP_LOGI(TAG, "now = %" PRIu32, now32);
     
     // username – na DeviceID
     snprintf(tuya_username, sizeof(tuya_username),
@@ -203,7 +209,6 @@ static void mqtt_start(void)
     ESP_LOGI(TAG, "Password: %s", tuya_password);
     ESP_LOGI(TAG, "ClientID: %s", tuya_client_id);
     ESP_LOGI(TAG, "Username: %s", tuya_username);
-    ESP_LOGI(TAG, "now = %" PRIu32, now32);
    
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
 
@@ -217,11 +222,19 @@ static void mqtt_start(void)
 
 void app_main(void)
 {
+
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init_sta();
 
     // poczekaj aż dostaniemy IP
     vTaskDelay(pdMS_TO_TICKS(5000));
+
+
+    obtain_time();   // ustawia RTC przez NTP
+
+    time_t now = time(NULL);
+
+    ESP_LOGI("TIME", "now = %ld", (long)now);
 
     mqtt_start();
 
